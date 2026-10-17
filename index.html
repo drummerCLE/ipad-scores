@@ -1,0 +1,52 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Scores">
+<meta name="theme-color" content="#0a0e1a"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Live Scores Board</title>
+<style>
+*{box-sizing:border-box;margin:0}html,body{height:100%;background:#0a0e1a;color:#eef;font-family:-apple-system,Helvetica,sans-serif;overflow:hidden}
+#top{position:fixed;top:0;left:0;right:0;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:#111832;z-index:5;font-size:22px;font-weight:700}
+#top small{font-weight:400;color:#8af;font-size:16px}
+#vp{position:absolute;top:56px;bottom:0;left:0;right:0;overflow:hidden}#track{will-change:transform}
+.lg{font-size:30px;font-weight:800;letter-spacing:2px;padding:22px 28px 10px;color:#ffcc33;border-bottom:2px solid #223}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:16px;padding:16px 24px}
+.g{background:#151d38;border-radius:16px;padding:14px 20px;border:2px solid transparent}
+.g.live{border-color:#ff4d3d;box-shadow:0 0 18px #ff4d3d55}
+.t{display:flex;align-items:center;font-size:30px;font-weight:700;height:52px}.t img{width:42px;height:42px;margin-right:14px}
+.t .n{flex:1}.t .s{font-size:40px;font-variant-numeric:tabular-nums}.t.l{opacity:.55}
+.st{font-size:20px;color:#9ab;margin-top:6px}.live .st{color:#ff6b5d;font-weight:700}.live .st:before{content:"● "}
+#ov{position:fixed;inset:0;background:#000d;z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:44px;font-weight:800}
+#ov small{font-size:20px;font-weight:400;margin-top:14px;color:#aab}#nosleep{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none}
+</style></head><body>
+<div id="top"><span>🏟️ LIVE SCORES</span><small id="upd">Loading…</small></div>
+<div id="vp"><div id="track"></div></div>
+<div id="ov">Tap to start<small>Keeps the screen awake and scrolls scores continuously</small></div>
+<script>
+const LEAGUES=[["NFL","football/nfl",""],["COLLEGE FOOTBALL","football/college-football","&groups=80&limit=300"],["MLB","baseball/mlb",""],["NBA","basketball/nba",""]];
+const B="https://site.api.espn.com/apis/site/v2/sports/";
+const ET=d=>new Date(d).toLocaleString("en-US",{timeZone:"America/New_York",weekday:"short",hour:"numeric",minute:"2-digit"})+" ET";
+function status(e){const s=e.status.type;if(s.state==="pre")return ET(e.date);return s.shortDetail||s.detail}
+function team(c,showScore){const t=c.team||{};return `<div class="t ${showScore&&c.winner===false&&c.__done?'l':''}">${t.logo?`<img src="${t.logo}" onerror="this.remove()">`:""}<span class="n">${t.abbreviation||t.shortDisplayName||"?"}${c.curatedRank&&c.curatedRank.current<=25?` <small style="font-size:18px;color:#8af">#${c.curatedRank.current}</small>`:""}</span><span class="s">${showScore?(c.score??""):""}</span></div>`}
+function card(e){const c=e.competitions[0],st=e.status.type.state,cs=[...c.competitors].sort((a,b)=>a.homeAway==="away"?-1:1);cs.forEach(x=>x.__done=st==="post");
+ return `<div class="g ${st==="in"?"live":""}">${cs.map(x=>team(x,st!=="pre")).join("")}<div class="st">${status(e)}${c.broadcasts?.[0]?.names?.[0]&&st!=="post"?" · "+c.broadcasts[0].names[0]:""}</div></div>`}
+const ord={in:0,pre:1,post:2};
+async function load(){let html="";for(const[n,p,q]of LEAGUES){try{const r=await fetch(B+p+"/scoreboard?_="+Date.now()+q);const d=await r.json();
+ const ev=(d.events||[]).sort((a,b)=>(ord[a.status.type.state]-ord[b.status.type.state])||(new Date(a.date)-new Date(b.date)));
+ if(ev.length)html+=`<div class="lg">${n}</div><div class="grid">${ev.map(card).join("")}</div>`}catch(err){console.warn(n,err)}}
+ if(!html)html='<div class="lg">No games scheduled</div>';
+ const tr=document.getElementById("track");tr.innerHTML=html+'<div id="dup">'+html+'</div>';
+ document.getElementById("upd").textContent="Updated "+new Date().toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"})+" ET"}
+let y=0,last=0;const SPEED=40;// px/sec
+function tick(t){const dt=last?(t-last)/1000:0;last=t;const tr=document.getElementById("track"),dup=document.getElementById("dup"),vp=document.getElementById("vp");
+ if(dup){const h=dup.offsetTop;if(h>vp.clientHeight){y+=SPEED*dt;if(y>=h)y-=h}else y=0;tr.style.transform=`translateY(${-y}px)`}requestAnimationFrame(tick)}
+// Wake lock
+let wl=null;async function lock(){try{if("wakeLock" in navigator){wl=await navigator.wakeLock.request("screen");return true}}catch(e){}return false}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){lock();load()}});
+function fallbackVideo(){const v=document.createElement("video");v.id="nosleep";v.muted=true;v.loop=true;v.playsInline=true;v.setAttribute("playsinline","");v.setAttribute("muted","");
+ const c=document.createElement("canvas");c.width=c.height=2;const x=c.getContext("2d");let f=0;setInterval(()=>{x.fillStyle=(f++%2)?"#000":"#010101";x.fillRect(0,0,2,2)},1000);
+ if(c.captureStream){v.srcObject=c.captureStream(1)}document.body.appendChild(v);v.play().catch(()=>{})}
+document.getElementById("ov").addEventListener("click",async e=>{e.currentTarget.remove();const ok=await lock();if(!ok)fallbackVideo();
+ if(document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(()=>{})},{once:true});
+load();setInterval(load,30000);requestAnimationFrame(tick);
+</script></body></html>
