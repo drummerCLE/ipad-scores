@@ -3,6 +3,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Scores">
 <meta name="theme-color" content="#0a0e1a"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="app-version" content="v2-favs-mls">
 <title>Live Scores Board</title>
 <style>
 *{box-sizing:border-box;margin:0}html,body{height:100%;background:#0a0e1a;color:#eef;font-family:-apple-system,Helvetica,sans-serif;overflow:hidden}
@@ -16,6 +17,11 @@
 .t{display:flex;align-items:center;font-size:30px;font-weight:700;height:52px}.t img{width:42px;height:42px;margin-right:14px}
 .t .n{flex:1}.t .s{font-size:40px;font-variant-numeric:tabular-nums}.t.l{opacity:.55}
 .st{font-size:20px;color:#9ab;margin-top:6px}.live .st{color:#ff6b5d;font-weight:700}.live .st:before{content:"● "}
+.g.fav{border-color:#ffc72c;box-shadow:0 0 20px #ffc72c66;background:linear-gradient(135deg,#2a2410,#151d38 60%)}
+.g.fav.live{border-color:#ffc72c;box-shadow:0 0 24px #ff4d3d99}
+.badge{float:right;font-size:16px;font-weight:800;color:#111;background:#ffc72c;border-radius:10px;padding:2px 10px;margin-left:8px}
+.badge.nx{background:#8af}.t.my .n{color:#ffd75e}
+.lg.my{color:#111;background:linear-gradient(90deg,#ffc72c,#ffdf7a);border:0}
 #ov{position:fixed;inset:0;background:#000d;z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:44px;font-weight:800}
 #ov small{font-size:20px;font-weight:400;margin-top:14px;color:#aab}#nosleep{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none}
 </style></head><body>
@@ -23,18 +29,39 @@
 <div id="vp"><div id="track"></div></div>
 <div id="ov">Tap to start<small>Keeps the screen awake and scrolls scores continuously</small></div>
 <script>
-const LEAGUES=[["NFL","football/nfl",""],["COLLEGE FOOTBALL","football/college-football","&groups=80&limit=300"],["MLB","baseball/mlb",""],["NBA","basketball/nba",""]];
+const LEAGUES=[["nfl","NFL","football/nfl",""],["cfb","COLLEGE FOOTBALL","football/college-football","&groups=80&limit=300"],["mlb","MLB","baseball/mlb",""],["nba","NBA","basketball/nba",""],["mls","MLS","soccer/usa.1",""]];
+// Favorites matched by ESPN team id within a league (abbreviation used only as cross-check fallback)
+const FAVS={cfb:[["213","PSU"]],nba:[["5","CLE"]],mlb:[["5","CLE"]],nfl:[["6","DAL"],["21","PHI"]],mls:[["183","CLB"]]};
 const B="https://site.api.espn.com/apis/site/v2/sports/";
+const isFavTeam=(lk,t)=>(FAVS[lk]||[]).some(([id,ab])=>t&&(t.id?t.id===id:t.abbreviation===ab));
+const isFavEv=(lk,e)=>e.competitions[0].competitors.some(c=>isFavTeam(lk,c.team));
 const ET=d=>new Date(d).toLocaleString("en-US",{timeZone:"America/New_York",weekday:"short",hour:"numeric",minute:"2-digit"})+" ET";
-function status(e){const s=e.status.type;if(s.state==="pre")return ET(e.date);return s.shortDetail||s.detail}
-function team(c,showScore){const t=c.team||{};return `<div class="t ${showScore&&c.winner===false&&c.__done?'l':''}">${t.logo?`<img src="${t.logo}" onerror="this.remove()">`:""}<span class="n">${t.abbreviation||t.shortDisplayName||"?"}${c.curatedRank&&c.curatedRank.current<=25?` <small style="font-size:18px;color:#8af">#${c.curatedRank.current}</small>`:""}</span><span class="s">${showScore?(c.score??""):""}</span></div>`}
-function card(e){const c=e.competitions[0],st=e.status.type.state,cs=[...c.competitors].sort((a,b)=>a.homeAway==="away"?-1:1);cs.forEach(x=>x.__done=st==="post");
- return `<div class="g ${st==="in"?"live":""}">${cs.map(x=>team(x,st!=="pre")).join("")}<div class="st">${status(e)}${c.broadcasts?.[0]?.names?.[0]&&st!=="post"?" · "+c.broadcasts[0].names[0]:""}</div></div>`}
+function status(lk,e){const s=e.status.type;if(s.state==="pre")return ET(e.date);
+ if(lk==="mls"){if(s.name==="STATUS_HALFTIME")return"HT";if(s.state==="post")return s.shortDetail&&s.shortDetail!=="Final"?s.shortDetail:"FT";if(s.state==="in")return e.status.displayClock||s.shortDetail}
+ return s.shortDetail||s.detail}
+function team(lk,c,showScore){const t=c.team||{};return `<div class="t ${showScore&&c.winner===false&&c.__done?'l':''} ${isFavTeam(lk,t)?'my':''}">${t.logo?`<img src="${t.logo}" onerror="this.remove()">`:""}<span class="n">${isFavTeam(lk,t)?"★ ":""}${t.abbreviation||t.shortDisplayName||"?"}${c.curatedRank&&c.curatedRank.current<=25?` <small style="font-size:18px;color:#8af">#${c.curatedRank.current}</small>`:""}</span><span class="s">${showScore?(c.score??""):""}</span></div>`}
+function card(lk,e,opt={}){const c=e.competitions[0],st=e.status.type.state,cs=[...c.competitors].sort((a,b)=>a.homeAway==="away"?-1:1);cs.forEach(x=>x.__done=st==="post");
+ const fav=isFavEv(lk,e),lname=LEAGUES.find(l=>l[0]===lk)[1];
+ return `<div class="g ${st==="in"?"live":""} ${fav?"fav":""}">${opt.next?'<span class="badge nx">NEXT</span>':""}${fav?'<span class="badge">★ MY TEAM</span>':""}${opt.showLeague?`<span class="badge nx" style="background:#334;color:#cde">${lname}</span>`:""}${cs.map(x=>team(lk,x,st!=="pre")).join("")}<div class="st">${status(lk,e)}${c.broadcasts?.[0]?.names?.[0]&&st!=="post"?" · "+c.broadcasts[0].names[0]:""}</div></div>`}
 const ord={in:0,pre:1,post:2};
-async function load(){let html="";for(const[n,p,q]of LEAGUES){try{const r=await fetch(B+p+"/scoreboard?_="+Date.now()+q);const d=await r.json();
- const ev=(d.events||[]).sort((a,b)=>(ord[a.status.type.state]-ord[b.status.type.state])||(new Date(a.date)-new Date(b.date)));
- if(ev.length)html+=`<div class="lg">${n}</div><div class="grid">${ev.map(card).join("")}</div>`}catch(err){console.warn(n,err)}}
- if(!html)html='<div class="lg">No games scheduled</div>';
+const ymd=d=>d.toLocaleDateString("en-CA",{timeZone:"America/New_York"}).replace(/-/g,"");
+const nextCache={};// "lk:id" -> {t,ev}
+async function getJSON(u){const r=await fetch(u);if(!r.ok)throw new Error(r.status);return r.json()}
+async function findNext(lk,path,q,id){const k=lk+":"+id,c=nextCache[k];if(c&&Date.now()-c.t<30*60e3)return c.ev;
+ let ev=null;for(let i=1;i<=7&&!ev;i++){try{const d=await getJSON(B+path+"/scoreboard?dates="+ymd(new Date(Date.now()+i*864e5))+q);
+  ev=(d.events||[]).find(e=>e.competitions[0].competitors.some(x=>x.team&&x.team.id===id))||null}catch(e){}}
+ nextCache[k]={t:Date.now(),ev};return ev}
+async function gather(){const out={};await Promise.all(LEAGUES.map(async([lk,n,p,q])=>{try{const d=await getJSON(B+p+"/scoreboard?_="+Date.now()+q);
+  out[lk]=(d.events||[]).sort((a,b)=>(ord[a.status.type.state]-ord[b.status.type.state])||(new Date(a.date)-new Date(b.date)))}catch(err){out[lk]=[];console.warn(n,err)}}));
+ const favs=[];for(const[lk,n,p,q]of LEAGUES){for(const[id]of FAVS[lk]||[]){const ev=out[lk].find(e=>e.competitions[0].competitors.some(c=>c.team&&c.team.id===id));
+  if(ev){if(!favs.some(f=>f.e.id===ev.id))favs.push({lk,e:ev})}else{const nx=await findNext(lk,p,q,id);if(nx&&!favs.some(f=>f.e.id===nx.id))favs.push({lk,e:nx,next:true})}}}
+ favs.sort((a,b)=>(ord[a.e.status.type.state]-ord[b.e.status.type.state])||(new Date(a.e.date)-new Date(b.e.date)));
+ return{out,favs}}
+function build({out,favs}){const spot=t=>favs.length?`<div class="lg my">★ ${t}</div><div class="grid">${favs.map(f=>card(f.lk,f.e,{next:f.next,showLeague:true})).join("")}</div>`:"";
+ let html=spot("MY TEAMS"),k=0;const secs=LEAGUES.filter(l=>out[l[0]].length);
+ secs.forEach(([lk,n],i)=>{html+=`<div class="lg">${n}</div><div class="grid">${out[lk].map(e=>card(lk,e)).join("")}</div>`;if(++k%2===0&&i<secs.length-1)html+=spot("MY TEAMS SPOTLIGHT")});
+ if(!secs.length)html+='<div class="lg">No games scheduled</div>';return html}
+async function load(){const html=build(await gather());
  const tr=document.getElementById("track");tr.innerHTML=html+'<div id="dup">'+html+'</div>';
  document.getElementById("upd").textContent="Updated "+new Date().toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"})+" ET"}
 let y=0,last=0;const SPEED=40;// px/sec
